@@ -63,15 +63,15 @@ macro_rules! callback(
 pub mod error {
     use libc::{c_int, c_char};
     use std::mem;
-    use std::string;
+    use std::str;
 
     callback!(
         type Args = (error: ::Error, description: String);
         type Callback = ErrorCallback;
         let ext_set = |cb| unsafe { ::ffi::glfwSetErrorCallback(cb) };
         fn callback(error: c_int, description: *const c_char) {
-            (mem::transmute(error),
-                string::raw::from_buf(mem::transmute(description)))
+            (mem::transmute(error), string::raw::from_buf(
+                mem::transmute(description)))
         }
     )
 }

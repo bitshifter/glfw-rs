@@ -63,7 +63,7 @@ macro_rules! callback(
 pub mod error {
     use libc::{c_int, c_char};
     use std::mem;
-    use std::str;
+    use std::string;
 
     callback!(
         type Args = (error: ::Error, description: String);

@@ -13,15 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate native;
 extern crate glfw;
 
-use glfw::Context;
-
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    native::start(argc, argv, main)
-}
+use glfw::{Action, Context, Key};
 
 fn main() {
     let glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
@@ -50,20 +44,20 @@ static NATIVE_MOD: glfw::Modifiers = glfw::Control;
 fn handle_window_event(window: &glfw::Window, event: glfw::WindowEvent) {
     match event {
         glfw::KeyEvent(key, _, action, mods) => {
-            if action == glfw::Press {
-                if key == glfw::KeyEscape {
+            if action == Action::Press {
+                if key == Key::Escape {
                     window.set_should_close(true);
                 }
-                if (key == glfw::KeyV) && mods.contains(NATIVE_MOD) {
+                if (key == Key::V) && mods.contains(NATIVE_MOD) {
                     match window.get_clipboard_string() {
-                        ref s if !s.is_empty() => println!("Clipboard contains \"{:s}\"", *s),
+                        ref s if !s.is_empty() => println!("Clipboard contains \"{}\"", *s),
                         _                      => println!("Clipboard does not contain a string"),
                     }
                 }
-                if (key == glfw::KeyC) && mods.contains(NATIVE_MOD) {
+                if (key == Key::C) && mods.contains(NATIVE_MOD) {
                     let s = "Hello GLFW World!";
                     window.set_clipboard_string(s);
-                    println!("Setting clipboard to {:s}", s);
+                    println!("Setting clipboard to {}", s);
                 }
             }
         }

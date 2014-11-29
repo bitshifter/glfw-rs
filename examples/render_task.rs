@@ -16,16 +16,10 @@
 //! Demonstrates how concurrent rendering can be achieved
 //! through the use of `RenderContext`s.
 
-extern crate native;
 extern crate glfw;
 
-use glfw::Context;
+use glfw::{Action, Context, Key};
 use std::task::TaskBuilder;
-
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    native::start(argc, argv, main)
-}
 
 fn main() {
     let glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
@@ -74,7 +68,7 @@ fn render(context: glfw::RenderContext, finish: Receiver<()>) {
 
 fn handle_window_event(window: &glfw::Window, event: glfw::WindowEvent) {
     match event {
-        glfw::KeyEvent(glfw::KeyEscape, _, glfw::Press, _) => {
+        glfw::KeyEvent(Key::Escape, _, Action::Press, _) => {
             window.set_should_close(true)
         }
         _ => {}

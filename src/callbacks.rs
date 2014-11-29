@@ -27,7 +27,7 @@ macro_rules! callback(
         let ext_set = $ext_set:expr;
         fn callback($($ext_arg:ident: $ext_arg_ty:ty),*) $call:expr
     ) => (
-        local_data_key!(CALLBACK_KEY: Box<Object<Args> + 'static>)
+        thread_local!(static CALLBACK_KEY: RefCell<Option<Box<Object<Args> + 'static>>> = RefCell::new(None))
 
         type Args = ($($arg_ty),*,);
 
@@ -42,26 +42,34 @@ macro_rules! callback(
         }
 
         pub fn set<UserData: 'static>(f: ::$Callback<UserData>) {
-            CALLBACK_KEY.replace(Some(box f as Box<Object<Args> + 'static>));
+            let mut boxed_cb = Some(box f as Box<Object<Args> + 'static>);
+            CALLBACK_KEY.with(|cb| {
+                *cb.borrow_mut() = boxed_cb.take();
+            });
             ($ext_set)(Some(callback));
         }
 
         pub fn unset() {
-            CALLBACK_KEY.replace(None);
+            CALLBACK_KEY.with(|cb| {
+                *cb.borrow_mut() = None;
+            });
             ($ext_set)(None);
         }
 
         extern "C" fn callback($($ext_arg: $ext_arg_ty),*) {
-            match CALLBACK_KEY.get() {
-                Some(cb) => unsafe { cb.call($call) },
-                _ => {}
-            }
+            CALLBACK_KEY.with(|cb| {
+                match *cb.borrow() {
+                    Some(ref cb) => unsafe { cb.call($call) },
+                    _ => {}
+                }
+            })
         }
     )
 )
 
 pub mod error {
     use libc::{c_int, c_char};
+    use std::cell::RefCell;
     use std::mem;
     use std::string;
 
@@ -70,14 +78,15 @@ pub mod error {
         type Callback = ErrorCallback;
         let ext_set = |cb| unsafe { ::ffi::glfwSetErrorCallback(cb) };
         fn callback(error: c_int, description: *const c_char) {
-            (mem::transmute(error), string::raw::from_buf(
-                mem::transmute(description)))
+            (mem::transmute(error), string::String::from_raw_buf(
+                description as *const u8))
         }
     )
 }
 
 pub mod monitor {
     use libc::{c_int};
+    use std::cell::RefCell;
     use std::mem;
     use std::kinds::marker;
 
@@ -104,12 +113,12 @@ unsafe fn get_sender<'a>(window: &'a *mut ffi::GLFWwindow) -> &'a Sender<(f64, W
 macro_rules! window_callback(
     (fn $name:ident () => $event:ident) => (
         pub extern "C" fn $name(window: *mut ffi::GLFWwindow) {
-            unsafe { get_sender(&window).send((ffi::glfwGetTime() as f64, $event)); }
+            unsafe { get_sender(&window).send((ffi::glfwGetTime() as f64, WindowEvent::$event)); }
         }
      );
     (fn $name:ident ($($ext_arg:ident: $ext_arg_ty:ty),*) => $event:ident($($arg_conv:expr),*)) => (
         pub extern "C" fn $name(window: *mut ffi::GLFWwindow $(, $ext_arg: $ext_arg_ty)*) {
-            unsafe { get_sender(&window).send((ffi::glfwGetTime() as f64, $event($($arg_conv),*))); }
+            unsafe { get_sender(&window).send((ffi::glfwGetTime() as f64, WindowEvent::$event($($arg_conv),*))); }
         }
      );
 )

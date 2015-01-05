@@ -17,7 +17,6 @@
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![crate_name = "glfw"]
-#![comment = "Bindings and wrapper functions for glfw3."]
 
 #![feature(globs)]
 #![feature(macro_rules)]
@@ -39,7 +38,7 @@
 //!    let glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 //!
 //!     // Create a windowed mode window and its OpenGL context
-//!     let (window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::Windowed)
+//!     let (window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
 //!         .expect("Failed to create GLFW window.");
 //!
 //!     // Make the window's context current
@@ -55,7 +54,7 @@
 //!         for (_, event) in glfw::flush_messages(&events) {
 //!             println!("{}", event);
 //!             match event {
-//!                 glfw::KeyEvent(Key::Escape, _, Action::Press, _) => {
+//!                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
 //!                     window.set_should_close(true)
 //!                 },
 //!                 _ => {},
@@ -74,13 +73,15 @@ extern crate log;
 
 use libc::{c_double, c_float, c_int};
 use libc::{c_uint, c_ushort, c_void};
+use std::c_str::ToCStr;
 use std::mem;
-use std::comm::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::fmt;
 use std::kinds::marker;
 use std::ptr;
 use std::string;
 use std::vec;
+use std::kinds::Send;
 use semver::Version;
 
 /// Alias to `MouseButton1`, supplied for improved clarity.
@@ -95,7 +96,7 @@ mod callbacks;
 
 /// Input actions.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum Action {
     Release                      = ffi::RELEASE,
     Press                        = ffi::PRESS,
@@ -104,7 +105,7 @@ pub enum Action {
 
 /// Input keys.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
 pub enum Key {
     Space                    = ffi::KEY_SPACE,
     Apostrophe               = ffi::KEY_APOSTROPHE,
@@ -232,7 +233,7 @@ pub enum Key {
 /// Mouse buttons. The `MouseButtonLeft`, `MouseButtonRight`, and
 /// `MouseButtonMiddle` aliases are supplied for convenience.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
 pub enum MouseButton {
     /// The left mouse button. A `MouseButtonLeft` alias is provided to improve clarity.
     Button1                = ffi::MOUSE_BUTTON_1,
@@ -274,9 +275,11 @@ pub struct Callback<Fn, UserData> {
     pub data: UserData,
 }
 
+impl<Fn: Copy, UserData: Copy> Copy for Callback<Fn, UserData> {}
+
 /// Tokens corresponding to various error types.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum Error {
     NotInitialized              = ffi::NOT_INITIALIZED,
     NoCurrentContext            = ffi::NO_CURRENT_CONTEXT,
@@ -300,7 +303,7 @@ pub fn fail_on_errors(_: Error, description: String, _: &()) {
 
 /// A callback that triggers a task failure when an error is encountered.
 pub static FAIL_ON_ERRORS: Option<ErrorCallback<()>> =
-    Some(Callback { f: fail_on_errors, data: () });
+    Some(Callback { f: fail_on_errors as fn(Error, String, &()), data: () });
 
 /// The function to be used with the `LOG_ERRORS` callback.
 pub fn log_errors(_: Error, description: String, _: &()) {
@@ -310,11 +313,11 @@ pub fn log_errors(_: Error, description: String, _: &()) {
 /// A callback that logs each error as it is encountered without triggering a
 /// task failure.
 pub static LOG_ERRORS: Option<ErrorCallback<()>> =
-    Some(Callback { f: log_errors, data: () });
+    Some(Callback { f: log_errors as fn(Error, String, &()), data: () });
 
 /// Cursor modes.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum CursorMode {
     Normal                = ffi::CURSOR_NORMAL,
     Hidden                = ffi::CURSOR_HIDDEN,
@@ -322,6 +325,7 @@ pub enum CursorMode {
 }
 
 /// Describes a single video mode.
+#[derive(Copy)]
 pub struct VidMode {
     pub width:        u32,
     pub height:       u32,
@@ -347,14 +351,11 @@ pub type GLProc = ffi::GLFWglproc;
 /// performing some operations harder, this is to ensure thread safety is enforced
 /// statically. The context can be safely cloned or implicitly copied if need be
 /// for convenience.
-#[deriving(Clone)]
-pub struct Glfw {
-    no_send: marker::NoSend,
-    no_share: marker::NoSync,
-}
+#[derive(Copy, Clone)]
+pub struct Glfw;
 
 /// An error that might be returned when `glfw::init` is called.
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum InitError {
     /// The library was already initialized.
     AlreadyInitialized,
@@ -395,7 +396,7 @@ pub fn init<UserData: 'static>(mut callback: Option<ErrorCallback<UserData>>) ->
     static mut INIT: Once = ONCE_INIT;
     let mut result = Err(InitError::AlreadyInitialized);
     unsafe {
-        INIT.doit(|| {
+        INIT.call_once(|| {
             // Initialize the error callback if it was supplied. This is done
             // before `ffi::glfwInit` because errors could occur during
             // initialization.
@@ -405,7 +406,7 @@ pub fn init<UserData: 'static>(mut callback: Option<ErrorCallback<UserData>>) ->
             }
             if ffi::glfwInit() == ffi::TRUE {
                 result = Ok(());
-                std::rt::at_exit(proc() {
+                std::rt::at_exit(|| {
                     ffi::glfwTerminate()
                 });
             } else {
@@ -413,10 +414,7 @@ pub fn init<UserData: 'static>(mut callback: Option<ErrorCallback<UserData>>) ->
             }
         })
     }
-    result.map(|_| Glfw {
-        no_send: marker::NoSend,
-        no_share: marker::NoSync,
-    })
+    result.map(|_| Glfw)
 }
 
 impl Glfw {
@@ -475,7 +473,7 @@ impl Glfw {
     /// ~~~ignore
     /// let (window, events) = glfw.with_primary_monitor(|m| {
     ///     glfw.create_window(300, 300, "Hello this is window",
-    ///         m.map_or(glfw::Windowed, |m| glfw::FullScreen(m)))
+    ///         m.map_or(glfw::WindowMode::Windowed, |m| glfw::FullScreen(m)))
     /// }).expect("Failed to create GLFW window.");
     /// ~~~
     pub fn with_primary_monitor<T>(&self, f: |Option<&Monitor>| -> T) -> T {
@@ -530,21 +528,21 @@ impl Glfw {
     ///
     /// 10.7 and 10.8 support the following OpenGL versions:
     ///
-    /// - `glfw::ContextVersion(3, 2)`
+    /// - `glfw::WindowHint::ContextVersion(3, 2)`
     ///
     /// 10.9 supports the following OpenGL versions
     ///
-    /// - `glfw::ContextVersion(3, 2)`
-    /// - `glfw::ContextVersion(3, 3)`
-    /// - `glfw::ContextVersion(4, 1)`
+    /// - `glfw::WindowHint::ContextVersion(3, 2)`
+    /// - `glfw::WindowHint::ContextVersion(3, 3)`
+    /// - `glfw::WindowHint::ContextVersion(4, 1)`
     ///
     /// To create an OS X compatible context, the hints should be specified as
     /// follows:
     ///
     /// ~~~ignore
-    /// glfw.window_hint(glfw::ContextVersion(3, 2));
-    /// glfw.window_hint(glfw::OpenglForwardCompat(true));
-    /// glfw.window_hint(glfw::OpenglProfile(glfw::OpenGlCoreProfile));
+    /// glfw.window_hint(glfw::WindowHint::ContextVersion(3, 2));
+    /// glfw.window_hint(glfw::WindowHint::OpenglForwardCompat(true));
+    /// glfw.window_hint(glfw::WindowHint::OpenglProfile(glfw::OpenGlProfileHint::Core));
     /// ~~~
     pub fn window_hint(&self, hint: WindowHint) {
         match hint {
@@ -832,7 +830,7 @@ impl Monitor {
 
 /// Monitor events.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum MonitorEvent {
     Connected                   = ffi::CONNECTED,
     Disconnected                = ffi::DISCONNECTED,
@@ -871,7 +869,7 @@ impl fmt::Show for VidMode {
 }
 
 /// Window hints that can be set using the `window_hint` function.
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum WindowHint {
     /// Specifies the desired bit depth of the red component of the default framebuffer.
     RedBits(u32),
@@ -969,7 +967,7 @@ pub enum WindowHint {
 
 /// Client API tokens.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum ClientApiHint {
     OpenGl                   = ffi::OPENGL_API,
     OpenGlEs                 = ffi::OPENGL_ES_API,
@@ -977,7 +975,7 @@ pub enum ClientApiHint {
 
 /// Context robustness tokens.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum ContextRobustnessHint {
     NoRobustness                = ffi::NO_ROBUSTNESS,
     NoResetNotification         = ffi::NO_RESET_NOTIFICATION,
@@ -986,7 +984,7 @@ pub enum ContextRobustnessHint {
 
 /// OpenGL profile tokens.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show)]
 pub enum OpenGlProfileHint {
     Any            = ffi::OPENGL_ANY_PROFILE,
     Core           = ffi::OPENGL_CORE_PROFILE,
@@ -994,7 +992,7 @@ pub enum OpenGlProfileHint {
 }
 
 /// Describes the mode of a window
-#[deriving(Show)]
+#[derive(Copy, Show)]
 pub enum WindowMode<'a> {
     /// Full screen mode. Contains the monitor on which the window is displayed.
     FullScreen(&'a Monitor),
@@ -1042,21 +1040,21 @@ impl fmt::Show for Modifiers {
 pub type Scancode = c_int;
 
 /// Window event messages.
-#[deriving(Clone, PartialEq, PartialOrd, Show)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Show)]
 pub enum WindowEvent {
-    PosEvent(i32, i32),
-    SizeEvent(i32, i32),
-    CloseEvent,
-    RefreshEvent,
-    FocusEvent(bool),
-    IconifyEvent(bool),
-    FramebufferSizeEvent(i32, i32),
-    MouseButtonEvent(MouseButton, Action, Modifiers),
-    CursorPosEvent(f64, f64),
-    CursorEnterEvent(bool),
-    ScrollEvent(f64, f64),
-    KeyEvent(Key, Scancode, Action, Modifiers),
-    CharEvent(char),
+    Pos(i32, i32),
+    Size(i32, i32),
+    Close,
+    Refresh,
+    Focus(bool),
+    Iconify(bool),
+    FramebufferSize(i32, i32),
+    MouseButton(MouseButton, Action, Modifiers),
+    CursorPos(f64, f64),
+    CursorEnter(bool),
+    Scroll(f64, f64),
+    Key(Key, Scancode, Action, Modifiers),
+    Char(char),
 }
 
 /// Returns an iterator that yeilds until no more messages are contained in the
@@ -1517,10 +1515,10 @@ impl Drop for Window {
         drop(self.drop_sender.take());
 
         // Check if all senders from the child `RenderContext`s have hung up.
-        if self.drop_receiver.try_recv() != Err(std::comm::Disconnected) {
+        if self.drop_receiver.try_recv() != Err(std::sync::mpsc::TryRecvError::Disconnected) {
             debug!("Attempted to drop a Window before the `RenderContext` was dropped.");
             debug!("Blocking until the `RenderContext` was dropped.");
-            let _ = self.drop_receiver.recv_opt();
+            let _ = self.drop_receiver.recv();
         }
 
         if !self.is_shared {
@@ -1543,6 +1541,8 @@ pub struct RenderContext {
     #[allow(dead_code)]
     drop_sender: Sender<()>,
 }
+
+unsafe impl Send for RenderContext {}
 
 /// Methods common to renderable contexts
 pub trait Context {
@@ -1589,7 +1589,7 @@ pub fn make_context_current(context: Option<&Context>) {
 
 /// Joystick identifier tokens.
 #[repr(i32)]
-#[deriving(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Show, FromPrimitive)]
 pub enum JoystickId {
     Joystick1       = ffi::JOYSTICK_1,
     Joystick2       = ffi::JOYSTICK_2,
@@ -1610,6 +1610,7 @@ pub enum JoystickId {
 }
 
 /// A joystick handle.
+#[derive(Copy)]
 pub struct Joystick {
     pub id: JoystickId,
     pub glfw: Glfw,

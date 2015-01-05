@@ -19,12 +19,12 @@
 extern crate glfw;
 
 use glfw::{Action, Context, Key};
-use std::task::TaskBuilder;
+use std::thread::Builder;
 
 fn main() {
     let glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 
-    let (mut window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::Windowed)
+    let (mut window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
     window.set_key_polling(true);
@@ -32,8 +32,8 @@ fn main() {
     let render_context = window.render_context();
     let (send, recv) = channel();
 
-    let render_task = TaskBuilder::new().named("render task");
-    let mut render_task_done = render_task.try_future(proc() {
+    let render_task = Builder::new().name("render task".to_string());
+    let render_task_done = render_task.spawn(move || {
         render(render_context, recv);
     });
 
@@ -48,7 +48,7 @@ fn main() {
     send.send(());
 
     // Wait for acknowledgement that the rendering was completed.
-    let _ = render_task_done.get_ref();
+    let _ = render_task_done.join();
 }
 
 fn render(context: glfw::RenderContext, finish: Receiver<()>) {
@@ -68,7 +68,7 @@ fn render(context: glfw::RenderContext, finish: Receiver<()>) {
 
 fn handle_window_event(window: &glfw::Window, event: glfw::WindowEvent) {
     match event {
-        glfw::KeyEvent(Key::Escape, _, Action::Press, _) => {
+        glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
             window.set_should_close(true)
         }
         _ => {}

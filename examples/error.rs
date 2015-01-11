@@ -15,10 +15,8 @@
 
 //! Demonstrates how custom error callbacks with user data can be created
 
-#![feature(phase)]
-
 extern crate glfw;
-#[phase(plugin, link)] extern crate log;
+#[macro_use] extern crate log;
 
 use std::cell::Cell;
 
@@ -38,6 +36,6 @@ fn main() {
 }
 
 fn error_callback(_: glfw::Error, description: String, error_count: &Cell<uint>) {
-    error!("GLFW error {}: {}", error_count.get(), description);
+    error!("GLFW error {:?}: {:?}", error_count.get(), description);
     error_count.set(error_count.get() + 1);
 }

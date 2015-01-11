@@ -18,11 +18,7 @@
 #![crate_type = "dylib"]
 #![crate_name = "glfw"]
 
-#![feature(globs)]
-#![feature(macro_rules)]
-#![feature(phase)]
 #![feature(unsafe_destructor)]
-#![feature(associated_types)]
 
 #![allow(non_upper_case_globals)]
 
@@ -53,7 +49,7 @@
 //!         // Poll for and process events
 //!         glfw.poll_events();
 //!         for (_, event) in glfw::flush_messages(&events) {
-//!             println!("{}", event);
+//!             println!("{:?}", event);
 //!             match event {
 //!                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
 //!                     window.set_should_close(true)
@@ -69,20 +65,18 @@
 
 extern crate semver;
 extern crate libc;
-#[phase(plugin, link)]
+#[macro_use]
 extern crate log;
 
 use libc::{c_double, c_float, c_int};
-use libc::{c_uint, c_ushort, c_void};
-use std::c_str::ToCStr;
+use libc::{c_ushort, c_void};
+use std::ffi::CString;
 use std::mem;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::fmt;
-use std::kinds::marker;
+use std::marker::{self,Send};
 use std::ptr;
-use std::string;
 use std::vec;
-use std::kinds::Send;
 use semver::Version;
 
 /// Alias to `MouseButton1`, supplied for improved clarity.
@@ -426,7 +420,7 @@ impl Glfw {
     /// ~~~ignore
     /// use std::cell::Cell;
     ///
-    /// fn error_callback(_: glfw::Error, description: String, error_count: &Cell<uint>) {
+    /// fn error_callback(_: glfw::Error, description: String, error_count: &Cell<usize>) {
     ///     println!("GLFW error {}: {}", error_count.get(), description);
     ///     error_count.set(error_count.get() + 1);
     /// }
@@ -477,7 +471,7 @@ impl Glfw {
     ///         m.map_or(glfw::WindowMode::Windowed, |m| glfw::FullScreen(m)))
     /// }).expect("Failed to create GLFW window.");
     /// ~~~
-    pub fn with_primary_monitor<T>(&self, f: |Option<&Monitor>| -> T) -> T {
+    pub fn with_primary_monitor<T, F>(&self, f: F) -> T where F: Fn(Option<&Monitor>) -> T {
         match unsafe { ffi::glfwGetPrimaryMonitor() } {
             ptr if ptr.is_null() => f(None),
             ptr => f(Some(&Monitor {
@@ -501,11 +495,11 @@ impl Glfw {
     ///     }
     /// });
     /// ~~~
-    pub fn with_connected_monitors<T>(&self, f: |&[Monitor]| -> T) -> T {
+    pub fn with_connected_monitors<T, F>(&self, f: F) -> T where F: Fn(&[Monitor]) -> T {
         unsafe {
             let mut count = 0;
             let ptr = ffi::glfwGetMonitors(&mut count);
-            f(vec::Vec::from_raw_buf(ptr as *const _, count as uint).iter().map(|&ptr| {
+            f(vec::Vec::from_raw_buf(ptr as *const _, count as usize).iter().map(|&ptr| {
                 Monitor {
                     ptr: ptr,
                     no_copy: marker::NoCopy,
@@ -595,7 +589,7 @@ impl Glfw {
     /// Internal wrapper for `glfwCreateWindow`.
     fn create_window_intern(&self, width: u32, height: u32, title: &str, mode: WindowMode, share: Option<&Window>) -> Option<(Window, Receiver<(f64, WindowEvent)>)> {
         let ptr = unsafe {
-            title.with_c_str(|title| {
+            with_c_str(title, |title| {
                 ffi::glfwCreateWindow(
                     width as c_int,
                     height as c_int,
@@ -610,7 +604,7 @@ impl Glfw {
         } else {
             let (drop_sender, drop_receiver) = channel();
             let (sender, receiver) = channel();
-            unsafe { ffi::glfwSetWindowUserPointer(ptr, mem::transmute(box sender)); }
+            unsafe { ffi::glfwSetWindowUserPointer(ptr, mem::transmute(Box::new(sender))); }
             Some((
                 Window {
                     ptr: ptr,
@@ -686,7 +680,7 @@ impl Glfw {
     /// Wrapper for `glfwExtensionSupported`.
     pub fn extension_supported(&self, extension: &str) -> bool {
         unsafe {
-            extension.with_c_str(|extension| {
+            with_c_str(extension, |extension| {
                 ffi::glfwExtensionSupported(extension) == ffi::TRUE
             })
         }
@@ -698,7 +692,7 @@ impl Glfw {
     /// Wrapper for `glfwGetProcAddress`.
     pub fn get_proc_address_raw(&self, procname: &str) -> GLProc {
         debug_assert!(unsafe { ffi::glfwGetCurrentContext() } != std::ptr::null_mut());
-        procname.with_c_str(|procname| {
+        with_c_str(procname, |procname| {
             unsafe { ffi::glfwGetProcAddress(procname) }
         })
     }
@@ -722,18 +716,30 @@ pub fn get_version() -> Version {
         let mut patch = 0;
         ffi::glfwGetVersion(&mut major, &mut minor, &mut patch);
         Version {
-            major: major as uint,
-            minor: minor as uint,
-            patch: patch as uint,
+            major: major as u64,
+            minor: minor as u64,
+            patch: patch as u64,
             pre:   Vec::new(),
             build: Vec::new(),
         }
     }
 }
 
+/// Replacement for `String::from_raw_buf`
+pub unsafe fn string_from_c_str(c_str: *const i8) -> String {
+    use std::ffi::c_str_to_bytes;
+    String::from_utf8_lossy(c_str_to_bytes(&c_str)).into_owned()  
+}
+
+/// Replacement for `ToCStr::with_c_str`
+pub fn with_c_str<F, T>(s: &str, f: F) -> T where F: FnOnce(*const i8) -> T {
+    let c_str = CString::from_slice(s.as_bytes());
+    f(c_str.as_slice_with_nul().as_ptr())
+}
+
 /// Wrapper for `glfwGetVersionString`.
 pub fn get_version_string() -> String {
-    unsafe { string::String::from_raw_buf(ffi::glfwGetVersionString() as *const u8) }
+    unsafe { string_from_c_str(ffi::glfwGetVersionString()) }
 }
 
 /// An monitor callback. This can be supplied with some user data to be passed
@@ -777,7 +783,7 @@ impl Monitor {
 
     /// Wrapper for `glfwGetMonitorName`.
     pub fn get_name(&self) -> String {
-        unsafe { string::String::from_raw_buf(ffi::glfwGetMonitorName(self.ptr) as *const u8) }
+        unsafe { string_from_c_str(ffi::glfwGetMonitorName(self.ptr)) }
     }
 
     /// Wrapper for `glfwGetVideoModes`.
@@ -785,7 +791,7 @@ impl Monitor {
         unsafe {
             let mut count = 0;
             let ptr = ffi::glfwGetVideoModes(self.ptr, &mut count);
-            vec::Vec::from_raw_buf(ptr, count as uint).iter().map(VidMode::from_glfw_vid_mode).collect()
+            vec::Vec::from_raw_buf(ptr, count as usize).iter().map(VidMode::from_glfw_vid_mode).collect()
         }
     }
 
@@ -806,9 +812,9 @@ impl Monitor {
         unsafe {
             let llramp = *ffi::glfwGetGammaRamp(self.ptr);
             GammaRamp {
-                red:    vec::Vec::from_raw_buf(llramp.red as *const _,   llramp.size as uint),
-                green:  vec::Vec::from_raw_buf(llramp.green as *const _, llramp.size as uint),
-                blue:   vec::Vec::from_raw_buf(llramp.blue as *const _,  llramp.size as uint),
+                red:    vec::Vec::from_raw_buf(llramp.red as *const _,   llramp.size as usize),
+                green:  vec::Vec::from_raw_buf(llramp.green as *const _, llramp.size as usize),
+                blue:   vec::Vec::from_raw_buf(llramp.blue as *const _,  llramp.size as usize),
             }
         }
     }
@@ -822,7 +828,7 @@ impl Monitor {
                     red:    ramp.red.as_mut_ptr(),
                     green:  ramp.green.as_mut_ptr(),
                     blue:   ramp.blue.as_mut_ptr(),
-                    size:   ramp.red.len() as c_uint,
+                    size:   ramp.red.len() as u32,
                 }
             );
         }
@@ -1160,7 +1166,7 @@ impl Window {
     /// Wrapper for `glfwSetWindowTitle`.
     pub fn set_title(&self, title: &str) {
         unsafe {
-            title.with_c_str(|title| {
+            with_c_str(title, |title| {
                 ffi::glfwSetWindowTitle(self.ptr, title);
             });
         }
@@ -1238,7 +1244,7 @@ impl Window {
     ///     }
     /// });
     /// ~~~
-    pub fn with_window_mode<T>(&self, f: |WindowMode| -> T) -> T {
+    pub fn with_window_mode<T, F>(&self, f: F) -> T where F: Fn(WindowMode) -> T {
         let ptr = unsafe { ffi::glfwGetWindowMonitor(self.ptr) };
         if ptr.is_null() {
             f(WindowMode::Windowed)
@@ -1276,9 +1282,9 @@ impl Window {
     pub fn get_context_version(&self) -> Version {
         unsafe {
             Version {
-                major: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_VERSION_MAJOR) as uint,
-                minor: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_VERSION_MINOR) as uint,
-                patch: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_REVISION) as uint,
+                major: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_VERSION_MAJOR) as u64,
+                minor: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_VERSION_MINOR) as u64,
+                patch: ffi::glfwGetWindowAttrib(self.ptr, ffi::CONTEXT_REVISION) as u64,
                 pre:   Vec::new(),
                 build: Vec::new(),
             }
@@ -1459,7 +1465,7 @@ impl Window {
     /// Wrapper for `glfwGetClipboardString`.
     pub fn set_clipboard_string(&self, string: &str) {
         unsafe {
-            string.with_c_str(|string| {
+            with_c_str(string, |string| {
                 ffi::glfwSetClipboardString(self.ptr, string);
             });
         }
@@ -1467,7 +1473,7 @@ impl Window {
 
     /// Wrapper for `glfwGetClipboardString`.
     pub fn get_clipboard_string(&self) -> String {
-        unsafe { string::String::from_raw_buf(ffi::glfwGetClipboardString(self.ptr) as *const u8) }
+        unsafe { string_from_c_str(ffi::glfwGetClipboardString(self.ptr)) }
     }
 
     /// Wrapper for `glfwGetWin32Window`
@@ -1630,7 +1636,7 @@ impl Joystick {
         unsafe {
             let mut count = 0;
             let ptr = ffi::glfwGetJoystickAxes(self.id as c_int, &mut count);
-            vec::Vec::from_raw_buf(ptr, count as uint).iter().map(|&a| a as f32).collect()
+            vec::Vec::from_raw_buf(ptr, count as usize).iter().map(|&a| a as f32).collect()
         }
     }
 
@@ -1639,12 +1645,12 @@ impl Joystick {
         unsafe {
             let mut count = 0;
             let ptr = ffi::glfwGetJoystickButtons(self.id as c_int, &mut count);
-            vec::Vec::from_raw_buf(ptr, count as uint).iter().map(|&b| b as c_int).collect()
+            vec::Vec::from_raw_buf(ptr, count as usize).iter().map(|&b| b as c_int).collect()
         }
     }
 
     /// Wrapper for `glfwGetJoystickName`.
     pub fn get_name(&self) -> String {
-        unsafe { string::String::from_raw_buf(ffi::glfwGetJoystickName(self.id as c_int) as *const u8) }
+        unsafe { string_from_c_str(ffi::glfwGetJoystickName(self.id as c_int)) }
     }
 }

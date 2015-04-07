@@ -43,7 +43,7 @@ macro_rules! callback(
         }
 
         pub fn set<UserData: 'static>(f: ::$Callback<UserData>) {
-            let mut boxed_cb = Some(box f as Box<Object<Args> + 'static>);
+            let mut boxed_cb = Some(Box::new(f) as Box<Object<Args> + 'static>);
             CALLBACK_KEY.with(|cb| {
                 *cb.borrow_mut() = boxed_cb.take();
             });
@@ -76,7 +76,7 @@ pub mod error {
     callback!(
         type Args = (error: ::Error, description: String);
         type Callback = ErrorCallback;
-        let ext_set = |&: cb| unsafe { ::ffi::glfwSetErrorCallback(cb) };
+        let ext_set = |cb| unsafe { ::ffi::glfwSetErrorCallback(cb) };
         fn callback(error: c_int, description: *const c_char) {
             (mem::transmute(error), ::string_from_c_str(description))
         }
@@ -87,18 +87,14 @@ pub mod monitor {
     use libc::{c_int};
     use std::cell::RefCell;
     use std::mem;
-    use std::marker;
 
     callback!(
         type Args = (monitor: ::Monitor, event: ::MonitorEvent);
         type Callback = MonitorCallback;
-        let ext_set = |&: cb| unsafe { ::ffi::glfwSetMonitorCallback(cb) };
+        let ext_set = |cb| unsafe { ::ffi::glfwSetMonitorCallback(cb) };
         fn callback(monitor: *mut ::ffi::GLFWmonitor, event: c_int) {
             let monitor = ::Monitor {
-                ptr: monitor,
-                no_copy: marker::NoCopy,
-                no_send: marker::NoSend,
-                no_share: marker::NoSync,
+                ptr: monitor
             };
             (monitor, mem::transmute(event))
         }

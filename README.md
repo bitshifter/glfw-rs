@@ -27,9 +27,9 @@ extern crate glfw;
 use glfw::{Action, Context, Key};
 
 fn main() {
-    let glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+    let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 
-    let (window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
+    let (mut window, events) = glfw.create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
     window.set_key_polling(true);
@@ -38,12 +38,12 @@ fn main() {
     while !window.should_close() {
         glfw.poll_events();
         for (_, event) in glfw::flush_messages(&events) {
-            handle_window_event(&window, event);
+            handle_window_event(&mut window, event);
         }
     }
 }
 
-fn handle_window_event(window: &glfw::Window, event: glfw::WindowEvent) {
+fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     match event {
         glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
             window.set_should_close(true)
@@ -92,9 +92,27 @@ git = "https://github.com/bjz/glfw-rs.git"
 default-features = false
 ~~~
 
-### Building and running the examples
+### A note about Travis CI
 
-Run `cargo test`, then `./target/test/<example_name>`.
+You may encounter the following error when attempting to build your project on Travis:
+
+~~~
+CMake Error at CMakeLists.txt:3 (cmake_minimum_required):
+  CMake 2.8.9 or higher is required.  You are running version 2.8.7
+~~~
+
+This is because Travis CI _still_ hasn't updated their CMake version almost a year since the issue
+was reported (See travis-ci/travis-ci#2030). Because of this, you will need to [add the following
+build commands](https://github.com/travis-ci/travis-ci/issues/2030#issuecomment-49210009) to your
+`.travis.yml`:
+
+~~~yml
+before_install:
+  # install a newer cmake since at this time Travis only has version 2.8.7
+  - yes | sudo add-apt-repository ppa:kalakris/cmake
+  - sudo apt-get update -qq
+install: sudo apt-get install cmake
+~~~
 
 ## Support
 

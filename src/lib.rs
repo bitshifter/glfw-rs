@@ -100,7 +100,7 @@ pub enum Action {
 
 /// Input keys.
 #[repr(i32)]
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum Key {
     Space                    = ffi::KEY_SPACE,
     Apostrophe               = ffi::KEY_APOSTROPHE,
@@ -228,7 +228,7 @@ pub enum Key {
 /// Mouse buttons. The `MouseButtonLeft`, `MouseButtonRight`, and
 /// `MouseButtonMiddle` aliases are supplied for convenience.
 #[repr(i32)]
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum MouseButton {
     /// The left mouse button. A `MouseButtonLeft` alias is provided to improve clarity.
     Button1                = ffi::MOUSE_BUTTON_1,
@@ -541,8 +541,8 @@ impl Glfw {
     ///
     /// ~~~ignore
     /// glfw.window_hint(glfw::WindowHint::ContextVersion(3, 2));
-    /// glfw.window_hint(glfw::WindowHint::OpenglForwardCompat(true));
-    /// glfw.window_hint(glfw::WindowHint::OpenglProfile(glfw::OpenGlProfileHint::Core));
+    /// glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
+    /// glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
     /// ~~~
     pub fn window_hint(&mut self, hint: WindowHint) {
         match hint {
@@ -567,9 +567,9 @@ impl Glfw {
             WindowHint::ContextVersion(major, minor)    => unsafe { ffi::glfwWindowHint(ffi::CONTEXT_VERSION_MAJOR, major as c_int);
                                                         ffi::glfwWindowHint(ffi::CONTEXT_VERSION_MINOR, minor as c_int) },
             WindowHint::ContextRobustness(robustness)   => unsafe { ffi::glfwWindowHint(ffi::CONTEXT_ROBUSTNESS,    robustness as c_int) },
-            WindowHint::OpenglForwardCompat(is_compat)  => unsafe { ffi::glfwWindowHint(ffi::OPENGL_FORWARD_COMPAT, is_compat as c_int) },
-            WindowHint::OpenglDebugContext(is_debug)    => unsafe { ffi::glfwWindowHint(ffi::OPENGL_DEBUG_CONTEXT,  is_debug as c_int) },
-            WindowHint::OpenglProfile(profile)          => unsafe { ffi::glfwWindowHint(ffi::OPENGL_PROFILE,        profile as c_int) },
+            WindowHint::OpenGlForwardCompat(is_compat)  => unsafe { ffi::glfwWindowHint(ffi::OPENGL_FORWARD_COMPAT, is_compat as c_int) },
+            WindowHint::OpenGlDebugContext(is_debug)    => unsafe { ffi::glfwWindowHint(ffi::OPENGL_DEBUG_CONTEXT,  is_debug as c_int) },
+            WindowHint::OpenGlProfile(profile)          => unsafe { ffi::glfwWindowHint(ffi::OPENGL_PROFILE,        profile as c_int) },
             WindowHint::Resizable(is_resizable)         => unsafe { ffi::glfwWindowHint(ffi::RESIZABLE,             is_resizable as c_int) },
             WindowHint::Visible(is_visible)             => unsafe { ffi::glfwWindowHint(ffi::VISIBLE,               is_visible as c_int) },
             WindowHint::Decorated(is_decorated)         => unsafe { ffi::glfwWindowHint(ffi::DECORATED,             is_decorated as c_int) },
@@ -702,11 +702,6 @@ impl Glfw {
         with_c_str(procname, |procname| {
             unsafe { ffi::glfwGetProcAddress(procname) }
         })
-    }
-
-    #[deprecated="Use Window::get_proc_address or Glfw::get_proc_address_raw"]
-    pub fn get_proc_address(&self, procname: &str) -> GLProc {
-        self.get_proc_address_raw(procname)
     }
 
     /// Constructs a `Joystick` handle corresponding to the supplied `JoystickId`.
@@ -957,17 +952,17 @@ pub enum WindowHint {
     /// is 3.0 or above.
     ///
     /// If another client API is requested, this hint is ignored.
-    OpenglForwardCompat(bool),
+    OpenGlForwardCompat(bool),
     /// Specifies whether to create a debug OpenGL context, which may have
     /// additional error and performance issue reporting functionality.
     ///
     /// If another client API is requested, this hint is ignored.
-    OpenglDebugContext(bool),
+    OpenGlDebugContext(bool),
     /// Specifies which OpenGL profile to create the context for. If requesting
     /// an OpenGL version below 3.2, `OpenGlAnyProfile` must be used.
     ///
     /// If another client API is requested, this hint is ignored.
-    OpenglProfile(OpenGlProfileHint),
+    OpenGlProfile(OpenGlProfileHint),
     /// Specifies whether the window will be resizable by the user. Even if this
     /// is set to `false`, the window can still be resized using the
     /// `Window::set_size` function.
@@ -1620,7 +1615,7 @@ pub fn make_context_current(context: Option<&Context>) {
 
 /// Joystick identifier tokens.
 #[repr(i32)]
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, FromPrimitive)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum JoystickId {
     Joystick1       = ffi::JOYSTICK_1,
     Joystick2       = ffi::JOYSTICK_2,
